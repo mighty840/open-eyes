@@ -1,0 +1,55 @@
+[package]
+name = "open-eyes-dashboard"
+version = "0.1.0"
+edition = "2021"
+default-run = "open-eyes-dashboard"
+
+[[bin]]
+name = "open-eyes-dashboard"
+path = "../bin/main.rs"
+
+[lints]
+workspace = true
+
+[features]
+web = ["dioxus/web", "dioxus/router", "dioxus/fullstack", "dep:web-sys", "dep:js-sys", "dep:wasm-bindgen"]
+server = [
+    "dioxus/server",
+    "dioxus/router",
+    "dioxus/fullstack",
+    "dep:axum",
+    "dep:reqwest",
+    "dep:tower-http",
+    "dep:dotenvy",
+    "dep:dioxus-cli-config",
+    "dep:dioxus-fullstack",
+    "dep:tokio",
+    "dep:open-eyes-core",
+    "dep:tracing-subscriber",
+]
+
+[dependencies]
+dioxus = "=0.7.3"
+dioxus-free-icons = { version = "0.10", features = ["bootstrap"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+dioxus-logger = "0.6"
+thiserror = { workspace = true }
+
+# Web-only
+web-sys = { version = "0.3", optional = true, features = ["Document", "Window"] }
+js-sys = { version = "0.3", optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
+
+# Server-only
+open-eyes-core = { workspace = true, optional = true }
+axum = { version = "0.8", optional = true }
+reqwest = { workspace = true, optional = true }
+tower-http = { version = "0.6", features = ["cors", "trace"], optional = true }
+dotenvy = { version = "0.15", optional = true }
+tokio = { workspace = true, optional = true }
+dioxus-cli-config = { version = "=0.7.3", optional = true }
+dioxus-fullstack = { version = "=0.7.3", optional = true }
+tracing-subscriber = { workspace = true, optional = true }

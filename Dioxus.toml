@@ -1,0 +1,11 @@
+[application]
+name = "open-eyes-dashboard"
+default_platform = "web"
+asset_dir = "assets"
+
+[web.app]
+title = "Open Eyes - Government Data Dashboard"
+
+[web.watcher]
+reload_html = true
+watch_path = ["open-eyes-dashboard/src", "assets"]

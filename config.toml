@@ -1,0 +1,21 @@
+[dashboard]
+port = 8080
+title = "Open Eyes"
+default_language = "de"
+
+[duckdb]
+path = "./data/open-eyes.duckdb"
+max_resource_size_mb = 100
+
+[llm]
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o-mini"
+api_key = ""
+max_tokens = 4096
+temperature = 0.1
+
+[ckan]
+base_url = "https://ckan.govdata.de/api/3/action"
+max_datasets = 10000
+formats = ["CSV", "JSON"]
+crawl_interval_hours = 24

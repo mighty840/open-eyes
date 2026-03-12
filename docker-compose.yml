@@ -1,0 +1,39 @@
+services:
+  dashboard:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - duckdb_data:/app/data
+    environment:
+      - OPEN_EYES_LLM_API_KEY=${OPEN_EYES_LLM_API_KEY:-}
+      - OPEN_EYES_LLM_BASE_URL=${OPEN_EYES_LLM_BASE_URL:-https://api.openai.com/v1}
+      - OPEN_EYES_LLM_MODEL=${OPEN_EYES_LLM_MODEL:-gpt-4o-mini}
+      - OPEN_EYES_DUCKDB_PATH=/app/data/open-eyes.duckdb
+    restart: unless-stopped
+
+  ingest-crawl:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingest
+    volumes:
+      - duckdb_data:/app/data
+    environment:
+      - OPEN_EYES_DUCKDB_PATH=/app/data/open-eyes.duckdb
+      - OPEN_EYES_CKAN_BASE_URL=${OPEN_EYES_CKAN_BASE_URL:-https://ckan.govdata.de/api/3/action}
+    command: ["crawl", "--max-datasets", "1000"]
+    profiles: ["ingest"]
+
+  ingest-load:
+    build:
+      context: .
+      dockerfile: Dockerfile.ingest
+    volumes:
+      - duckdb_data:/app/data
+    environment:
+      - OPEN_EYES_DUCKDB_PATH=/app/data/open-eyes.duckdb
+    command: ["load"]
+    profiles: ["ingest"]
+
+volumes:
+  duckdb_data:
