@@ -8,18 +8,39 @@ use crate::infrastructure::analytics::fetch_saved_charts;
 pub fn AnalyticsPage() -> Element {
     let charts = use_server_future(fetch_saved_charts)?;
 
+    let lang_signal: Signal<String> = use_context();
+    let language = lang_signal();
+
+    let title = if language == "de" { "Auswertungen" } else { "Analytics" };
+    let desc = if language == "de" {
+        "Gespeicherte Visualisierungen aus Ihren Fragen"
+    } else {
+        "Saved visualizations from your questions"
+    };
+
     rsx! {
         PageHeader {
-            title: "Analytics",
-            description: "Saved visualizations from your queries",
+            title: title.to_string(),
+            description: desc.to_string(),
         }
 
         match charts() {
             Some(Ok(saved)) => {
                 if saved.is_empty() {
                     rsx! {
-                        div { class: "card",
-                            p { "No saved charts yet. Ask questions in the chat to generate visualizations." }
+                        div { class: "empty-state",
+                            div { class: "empty-state-icon", "?" }
+                            h4 {
+                                if language == "de" { "Noch keine Auswertungen" }
+                                else { "No visualizations yet" }
+                            }
+                            p {
+                                if language == "de" {
+                                    "Stellen Sie Fragen im Chat, um automatisch Diagramme und Visualisierungen zu erstellen."
+                                } else {
+                                    "Ask questions in the chat to automatically create charts and visualizations."
+                                }
+                            }
                         }
                     }
                 } else {
@@ -40,8 +61,19 @@ pub fn AnalyticsPage() -> Element {
                     }
                 }
             },
-            Some(Err(e)) => rsx! { div { class: "card", p { "Error: {e}" } } },
-            None => rsx! { div { class: "loading", "Loading charts..." } },
+            Some(Err(_)) => rsx! {
+                div { class: "card",
+                    p {
+                        if language == "de" { "Fehler beim Laden der Auswertungen." }
+                        else { "Error loading analytics." }
+                    }
+                }
+            },
+            None => rsx! {
+                div { class: "loading",
+                    if language == "de" { "Lade Auswertungen..." } else { "Loading analytics..." }
+                }
+            },
         }
     }
 }

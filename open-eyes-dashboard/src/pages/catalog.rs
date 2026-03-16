@@ -12,6 +12,9 @@ pub fn CatalogPage() -> Element {
     let mut query = use_signal(String::new);
     let mut page = use_signal(|| 0u64);
 
+    let lang_signal: Signal<String> = use_context();
+    let language = lang_signal();
+
     let q = query();
     let p = page();
     let search_result = use_resource(move || {
@@ -21,14 +24,26 @@ pub fn CatalogPage() -> Element {
 
     let result = search_result.read();
 
+    let title = if language == "de" { "Datenkatalog" } else { "Data Catalog" };
+    let desc = if language == "de" {
+        "Durchsuchen Sie öffentliche Datensätze der deutschen Regierung"
+    } else {
+        "Browse public datasets from the German government"
+    };
+    let search_placeholder = if language == "de" {
+        "Datensätze durchsuchen...".to_string()
+    } else {
+        "Search datasets...".to_string()
+    };
+
     rsx! {
         PageHeader {
-            title: "Data Catalog",
-            description: "Browse and search government datasets",
+            title: title.to_string(),
+            description: desc.to_string(),
         }
 
         SearchBar {
-            placeholder: "Search datasets...".to_string(),
+            placeholder: search_placeholder,
             value: query(),
             on_input: move |val: String| {
                 query.set(val);
@@ -41,7 +56,17 @@ pub fn CatalogPage() -> Element {
                 let total_pages = data.total.div_ceil(PAGE_SIZE);
                 rsx! {
                     if data.datasets.is_empty() {
-                        div { class: "card", p { "No datasets found" } }
+                        div { class: "empty-state",
+                            div { class: "empty-state-icon", "?" }
+                            h4 {
+                                if language == "de" { "Keine Ergebnisse gefunden" }
+                                else { "No results found" }
+                            }
+                            p {
+                                if language == "de" { "Versuchen Sie andere Suchbegriffe oder stöbern Sie ohne Filter." }
+                                else { "Try different search terms or browse without a filter." }
+                            }
+                        }
                     } else {
                         div { class: "dataset-grid",
                             for ds in &data.datasets {
@@ -52,23 +77,39 @@ pub fn CatalogPage() -> Element {
                             button {
                                 disabled: p == 0,
                                 onclick: move |_| page.set(p.saturating_sub(1)),
-                                "Previous"
+                                if language == "de" { "Zurück" } else { "Previous" }
                             }
                             {
                                 let p_display = p + 1;
-                                rsx! { span { "Page {p_display} of {total_pages}" } }
+                                let page_label = if language == "de" {
+                                    format!("Seite {p_display} von {total_pages}")
+                                } else {
+                                    format!("Page {p_display} of {total_pages}")
+                                };
+                                rsx! { span { "{page_label}" } }
                             }
                             button {
                                 disabled: p + 1 >= total_pages,
                                 onclick: move |_| page.set(p + 1),
-                                "Next"
+                                if language == "de" { "Weiter" } else { "Next" }
                             }
                         }
                     }
                 }
             },
-            Some(Err(e)) => rsx! { div { class: "card", p { "Error: {e}" } } },
-            None => rsx! { div { class: "loading", "Loading catalog..." } },
+            Some(Err(_e)) => rsx! {
+                div { class: "card",
+                    p {
+                        if language == "de" { "Fehler beim Laden der Daten. Bitte versuchen Sie es erneut." }
+                        else { "Error loading data. Please try again." }
+                    }
+                }
+            },
+            None => rsx! {
+                div { class: "loading",
+                    if language == "de" { "Lade Katalog..." } else { "Loading catalog..." }
+                }
+            },
         }
     }
 }

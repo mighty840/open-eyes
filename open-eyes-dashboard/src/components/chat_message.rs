@@ -15,11 +15,17 @@ pub fn ChatMessageBubble(
         "chat-message assistant"
     };
 
+    let mut sql_expanded = use_signal(|| false);
+
     rsx! {
         div { class: class,
             p { "{content}" }
             if !sql.is_empty() {
-                div { class: "sql-preview", "{sql}" }
+                div {
+                    class: if sql_expanded() { "sql-preview expanded" } else { "sql-preview" },
+                    onclick: move |_| sql_expanded.set(!sql_expanded()),
+                    "{sql}"
+                }
             }
             if !chart_spec.is_empty() && chart_spec != "{}" {
                 ChartContainer { option_json: chart_spec }

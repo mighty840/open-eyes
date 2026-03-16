@@ -13,12 +13,54 @@ struct MessageEntry {
     chart_spec: String,
 }
 
+const SUGGESTED_QUESTIONS_DE: &[&str] = &[
+    "Welche Kategorien haben die meisten Datensätze?",
+    "Zeige die neuesten Datensätze",
+    "Welche Organisationen veröffentlichen am meisten?",
+    "Welche Datenformate werden am häufigsten genutzt?",
+];
+
+const SUGGESTED_QUESTIONS_EN: &[&str] = &[
+    "Which categories have the most data?",
+    "Show the latest published datasets",
+    "Which organizations publish the most?",
+    "What data formats are most common?",
+];
+
 #[component]
-pub fn ChatPanel(visible: bool, on_close: EventHandler<()>, language: String) -> Element {
+pub fn ChatPanel(
+    visible: bool,
+    on_close: EventHandler<()>,
+    language: String,
+    #[props(default)] prefill_question: String,
+    #[props(default)] on_prefill_consumed: EventHandler<()>,
+) -> Element {
     let mut messages = use_signal(Vec::<MessageEntry>::new);
     let mut input_text = use_signal(String::new);
     let mut loading = use_signal(|| false);
     let session_id = use_signal(|| format!("session-{}", chrono::Utc::now().timestamp_millis()));
+
+    // Handle prefilled question from homepage suggestion cards
+    let lang_clone = language.clone();
+    use_effect(move || {
+        let q = prefill_question.clone();
+        if !q.is_empty() && !loading() {
+            let lang = lang_clone.clone();
+            let sid = session_id();
+            messages.write().push(MessageEntry {
+                role: "user".into(),
+                content: q.clone(),
+                sql: String::new(),
+                chart_spec: String::new(),
+            });
+            loading.set(true);
+            on_prefill_consumed(());
+            spawn(async move {
+                handle_response(&mut messages, ask_question(q, sid, lang).await);
+                loading.set(false);
+            });
+        }
+    });
 
     let panel_class = if visible {
         "chat-panel"
@@ -26,10 +68,31 @@ pub fn ChatPanel(visible: bool, on_close: EventHandler<()>, language: String) ->
         "chat-panel hidden"
     };
 
+    let suggestions = if language == "de" {
+        SUGGESTED_QUESTIONS_DE
+    } else {
+        SUGGESTED_QUESTIONS_EN
+    };
+
+    let header_title = if language == "de" {
+        "Daten-Assistent"
+    } else {
+        "Data Assistant"
+    };
+
+    let placeholder = if language == "de" {
+        "Stellen Sie eine Frage zu den Daten..."
+    } else {
+        "Ask a question about the data..."
+    };
+
     rsx! {
         div { class: panel_class,
             div { class: "chat-header",
-                h3 { "Chat" }
+                h3 {
+                    Icon { icon: BsChatDots, width: 16, height: 16 }
+                    "{header_title}"
+                }
                 button {
                     class: "btn btn-ghost",
                     onclick: move |_| on_close(()),
@@ -39,8 +102,20 @@ pub fn ChatPanel(visible: bool, on_close: EventHandler<()>, language: String) ->
 
             div { class: "chat-messages",
                 if messages().is_empty() {
-                    div { class: "chat-message assistant",
-                        p { "Ask me anything about German open government data. I'll find relevant datasets, query them, and visualize the results." }
+                    div { class: "chat-welcome",
+                        div { class: "chat-welcome-icon",
+                            Icon { icon: BsEye, width: 24, height: 24 }
+                        }
+                        h4 {
+                            if language == "de" { "Willkommen bei Open Eyes" } else { "Welcome to Open Eyes" }
+                        }
+                        p {
+                            if language == "de" {
+                                "Stellen Sie Fragen zu deutschen Regierungsdaten in natürlicher Sprache. Ich suche die passenden Datensätze, analysiere sie und erstelle Visualisierungen."
+                            } else {
+                                "Ask questions about German government data in plain language. I'll find relevant datasets, analyze them, and create visualizations."
+                            }
+                        }
                     }
                 }
 
@@ -58,10 +133,44 @@ pub fn ChatPanel(visible: bool, on_close: EventHandler<()>, language: String) ->
                 }
             }
 
+            // Show suggestion chips when chat is empty
+            if messages().is_empty() && !loading() {
+                div { class: "chat-suggestions",
+                    for suggestion in suggestions.iter() {
+                        {
+                            let q = suggestion.to_string();
+                            let lang = language.clone();
+                            rsx! {
+                                button {
+                                    class: "suggestion-chip",
+                                    onclick: move |_| {
+                                        let q = q.clone();
+                                        let lang = lang.clone();
+                                        let sid = session_id();
+                                        messages.write().push(MessageEntry {
+                                            role: "user".into(),
+                                            content: q.clone(),
+                                            sql: String::new(),
+                                            chart_spec: String::new(),
+                                        });
+                                        loading.set(true);
+                                        spawn(async move {
+                                            handle_response(&mut messages, ask_question(q, sid, lang).await);
+                                            loading.set(false);
+                                        });
+                                    },
+                                    "{suggestion}"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             div { class: "chat-input",
                 input {
                     r#type: "text",
-                    placeholder: "Ask a question about the data...",
+                    placeholder: placeholder,
                     value: "{input_text}",
                     disabled: loading(),
                     oninput: move |e: FormEvent| input_text.set(e.value()),
@@ -135,9 +244,12 @@ fn handle_response(
             });
         }
         Err(e) => {
+            let friendly_msg = format!(
+                "Es tut mir leid, bei der Verarbeitung Ihrer Anfrage ist ein Fehler aufgetreten. Bitte versuchen Sie es mit einer anderen Formulierung.\n\nTechnische Details: {e}"
+            );
             messages.write().push(MessageEntry {
                 role: "assistant".into(),
-                content: format!("Error: {e}"),
+                content: friendly_msg,
                 sql: String::new(),
                 chart_spec: String::new(),
             });

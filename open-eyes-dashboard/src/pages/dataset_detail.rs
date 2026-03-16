@@ -7,6 +7,9 @@ use crate::infrastructure::datasets::{fetch_dataset_detail, fetch_table_preview}
 
 #[component]
 pub fn DatasetDetailPage(dataset_id: String) -> Element {
+    let lang_signal: Signal<String> = use_context();
+    let language = lang_signal();
+
     let did = dataset_id.clone();
     let detail = use_resource(move || {
         let did = did.clone();
@@ -19,7 +22,7 @@ pub fn DatasetDetailPage(dataset_id: String) -> Element {
                 class: "btn btn-ghost btn-back",
                 onclick: move |_| { navigator().go_back(); },
                 Icon { icon: BsArrowLeft, width: 16, height: 16 }
-                "Back"
+                if language == "de" { "Zurück" } else { "Back" }
             }
         }
 
@@ -36,19 +39,27 @@ pub fn DatasetDetailPage(dataset_id: String) -> Element {
                 div { class: "card",
                     div { class: "detail-meta",
                         div { class: "detail-meta-item",
-                            span { class: "label", "Organization" }
+                            span { class: "label",
+                                if language == "de" { "Organisation" } else { "Organization" }
+                            }
                             span { "{ds.organization}" }
                         }
                         div { class: "detail-meta-item",
-                            span { class: "label", "License" }
+                            span { class: "label",
+                                if language == "de" { "Lizenz" } else { "License" }
+                            }
                             span { "{ds.license}" }
                         }
                         div { class: "detail-meta-item",
-                            span { class: "label", "Created" }
+                            span { class: "label",
+                                if language == "de" { "Erstellt" } else { "Created" }
+                            }
                             span { "{ds.created_at}" }
                         }
                         div { class: "detail-meta-item",
-                            span { class: "label", "Modified" }
+                            span { class: "label",
+                                if language == "de" { "Aktualisiert" } else { "Updated" }
+                            }
                             span { "{ds.modified_at}" }
                         }
                     }
@@ -62,16 +73,41 @@ pub fn DatasetDetailPage(dataset_id: String) -> Element {
                 }
 
                 div { class: "card",
-                    h3 { "Resources" }
+                    h3 {
+                        if language == "de" { "Dateien" } else { "Files" }
+                    }
                     for res in &ds.resources {
                         div { class: "card",
-                            style: "margin: 8px 0; padding: 12px;",
+                            style: "margin: 8px 0; padding: 14px;",
                             div {
-                                style: "display: flex; justify-content: space-between; align-items: center;",
+                                style: "display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;",
                                 span { strong { "{res.name}" } " ({res.format})" }
-                                span {
-                                    style: "font-size: 12px; color: var(--text-muted);",
-                                    "{res.download_status} • {res.row_count} rows"
+                                div { style: "display: flex; align-items: center; gap: 8px;",
+                                    {
+                                        let status_class = match res.download_status.as_str() {
+                                            "loaded" => "status-badge loaded",
+                                            "pending" => "status-badge pending",
+                                            _ => "status-badge error",
+                                        };
+                                        let status_label = match res.download_status.as_str() {
+                                            "loaded" if language == "de" => "Geladen",
+                                            "loaded" => "Loaded",
+                                            "pending" if language == "de" => "Ausstehend",
+                                            "pending" => "Pending",
+                                            _ if language == "de" => "Fehler",
+                                            _ => "Error",
+                                        };
+                                        rsx! {
+                                            span { class: status_class, "{status_label}" }
+                                        }
+                                    }
+                                    if res.row_count > 0 {
+                                        span {
+                                            style: "font-size: 12px; color: var(--text-muted);",
+                                            "{res.row_count} ",
+                                            if language == "de" { "Zeilen" } else { "rows" }
+                                        }
+                                    }
                                 }
                             }
                             if !res.table_name.is_empty() {
@@ -81,8 +117,19 @@ pub fn DatasetDetailPage(dataset_id: String) -> Element {
                     }
                 }
             },
-            Some(Err(e)) => rsx! { div { class: "card", p { "Error: {e}" } } },
-            None => rsx! { div { class: "loading", "Loading dataset..." } },
+            Some(Err(_)) => rsx! {
+                div { class: "card",
+                    p {
+                        if language == "de" { "Fehler beim Laden des Datensatzes." }
+                        else { "Error loading dataset." }
+                    }
+                }
+            },
+            None => rsx! {
+                div { class: "loading",
+                    if language == "de" { "Lade Datensatz..." } else { "Loading dataset..." }
+                }
+            },
         }
     }
 }
@@ -104,7 +151,6 @@ fn DataPreview(table_name: String) -> Element {
                 .map(|obj| obj.keys().cloned().collect())
                 .unwrap_or_default();
 
-            // Clone data out so we don't hold the borrow across rsx!
             let rows_cloned: Vec<serde_json::Value> = rows.clone();
             let cols_cloned = columns.clone();
             drop(preview_read);

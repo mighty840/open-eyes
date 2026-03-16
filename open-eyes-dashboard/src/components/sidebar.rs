@@ -6,7 +6,8 @@ use crate::app::Route;
 use crate::components::language_switcher::LanguageSwitcher;
 
 struct NavItem {
-    label: &'static str,
+    label_de: &'static str,
+    label_en: &'static str,
     route: Route,
     icon: Element,
 }
@@ -18,22 +19,26 @@ pub fn Sidebar(language: String, on_language_change: EventHandler<String>) -> El
 
     let nav_items = [
         NavItem {
-            label: "Home",
+            label_de: "Startseite",
+            label_en: "Home",
             route: Route::HomePage {},
             icon: rsx! { Icon { icon: BsHouseDoor, width: 18, height: 18 } },
         },
         NavItem {
-            label: "Catalog",
+            label_de: "Datenkatalog",
+            label_en: "Catalog",
             route: Route::CatalogPage {},
             icon: rsx! { Icon { icon: BsCollection, width: 18, height: 18 } },
         },
         NavItem {
-            label: "Analytics",
+            label_de: "Auswertungen",
+            label_en: "Analytics",
             route: Route::AnalyticsPage {},
             icon: rsx! { Icon { icon: BsBarChartLine, width: 18, height: 18 } },
         },
         NavItem {
-            label: "Settings",
+            label_de: "Einstellungen",
+            label_en: "Settings",
             route: Route::SettingsPage {},
             icon: rsx! { Icon { icon: BsGear, width: 18, height: 18 } },
         },
@@ -61,13 +66,14 @@ pub fn Sidebar(language: String, on_language_change: EventHandler<String>) -> El
                             (a, b) => a == b,
                         };
                         let class = if is_active { "nav-item active" } else { "nav-item" };
+                        let label = if language == "de" { item.label_de } else { item.label_en };
                         rsx! {
                             Link {
                                 to: item.route.clone(),
                                 class: class,
                                 {item.icon}
                                 if !collapsed() {
-                                    span { "{item.label}" }
+                                    span { "{label}" }
                                 }
                             }
                         }
