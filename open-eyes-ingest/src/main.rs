@@ -26,7 +26,7 @@ enum Commands {
         #[arg(long, default_value = "10000")]
         max_datasets: u64,
     },
-    /// Download and load pending resources into DuckDB
+    /// Download and load pending resources into SQLite
     Load,
     /// Run crawl + load on a recurring schedule
     Daemon,
@@ -46,8 +46,8 @@ async fn main() {
     let config =
         open_eyes_core::AppConfig::load(Path::new(&cli.config)).expect("Failed to load config");
 
-    let db = open_eyes_core::DuckDbPool::open(Path::new(&config.duckdb.path))
-        .expect("Failed to open DuckDB");
+    let db = open_eyes_core::DbPool::open(Path::new(&config.db.path))
+        .expect("Failed to open SQLite");
     db.init_schema().expect("Failed to init schema");
 
     match cli.command {
@@ -58,7 +58,7 @@ async fn main() {
             }
         }
         Commands::Load => {
-            match downloader::load_pending(&db, config.duckdb.max_resource_size_mb).await {
+            match downloader::load_pending(&db, config.db.max_resource_size_mb).await {
                 Ok(n) => tracing::info!("Loaded {n} resources"),
                 Err(e) => tracing::error!("Load failed: {e}"),
             }
@@ -75,7 +75,7 @@ async fn main() {
                     tracing::error!("Crawl error: {e}");
                 }
                 if let Err(e) =
-                    downloader::load_pending(&db, config.duckdb.max_resource_size_mb).await
+                    downloader::load_pending(&db, config.db.max_resource_size_mb).await
                 {
                     tracing::error!("Load error: {e}");
                 }

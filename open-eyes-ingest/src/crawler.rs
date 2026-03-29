@@ -1,11 +1,11 @@
 use open_eyes_core::config::CkanConfig;
 use open_eyes_core::error::OpenEyesError;
 use open_eyes_core::models::{CkanPackage, CkanResponse, CkanSearchResult};
-use open_eyes_core::DuckDbPool;
+use open_eyes_core::DbPool;
 
-/// Crawl CKAN portal and upsert datasets + resources into DuckDB.
+/// Crawl CKAN portal and upsert datasets + resources into SQLite.
 pub async fn crawl(
-    db: &DuckDbPool,
+    db: &DbPool,
     config: &CkanConfig,
     max_datasets: u64,
 ) -> Result<u64, OpenEyesError> {
@@ -66,7 +66,7 @@ pub async fn crawl(
 }
 
 fn upsert_package(
-    db: &DuckDbPool,
+    db: &DbPool,
     pkg: &CkanPackage,
     allowed_formats: &[String],
 ) -> Result<(), OpenEyesError> {
@@ -92,33 +92,21 @@ fn upsert_package(
     let created = pkg.metadata_created.as_deref().unwrap_or("");
     let modified = pkg.metadata_modified.as_deref().unwrap_or("");
 
-    let cats_sql = format!(
-        "[{}]",
-        categories
-            .iter()
-            .map(|c| format!("'{}'", c.replace('\'', "''")))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
-    let tags_sql = format!(
-        "[{}]",
-        tags.iter()
-            .map(|t| format!("'{}'", t.replace('\'', "''")))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    // Store arrays as JSON strings
+    let cats_json = serde_json::to_string(&categories).unwrap_or_else(|_| "[]".to_string());
+    let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
 
     let sql = format!(
         r#"INSERT OR REPLACE INTO oe_datasets (id, title, title_de, description, description_de, organization, categories, tags, license, ckan_url, created_at, modified_at)
-        VALUES ('{id}', '{title}', '{title}', '{desc}', '{desc}', '{org}', {cats}, {tags}, '{license}', '{url}',
-                CASE WHEN '{created}' = '' THEN NULL ELSE TRY_CAST('{created}' AS TIMESTAMP) END,
-                CASE WHEN '{modified}' = '' THEN NULL ELSE TRY_CAST('{modified}' AS TIMESTAMP) END)"#,
+        VALUES ('{id}', '{title}', '{title}', '{desc}', '{desc}', '{org}', '{cats}', '{tags}', '{license}', '{url}',
+                CASE WHEN '{created}' = '' THEN NULL ELSE '{created}' END,
+                CASE WHEN '{modified}' = '' THEN NULL ELSE '{modified}' END)"#,
         id = pkg.id.replace('\'', "''"),
         title = title.replace('\'', "''"),
         desc = description.replace('\'', "''"),
         org = org.replace('\'', "''"),
-        cats = cats_sql,
-        tags = tags_sql,
+        cats = cats_json.replace('\'', "''"),
+        tags = tags_json.replace('\'', "''"),
         license = license.replace('\'', "''"),
         url = ckan_url.replace('\'', "''"),
         created = created.replace('\'', "''"),
@@ -130,7 +118,12 @@ fn upsert_package(
     // Insert resources
     if let Some(resources) = &pkg.resources {
         for res in resources {
-            let fmt = res.format.as_deref().unwrap_or("").to_uppercase();
+            let raw_fmt = res.format.as_deref().unwrap_or("");
+            let fmt = raw_fmt
+                .rsplit('/')
+                .next()
+                .unwrap_or(raw_fmt)
+                .to_uppercase();
             if !allowed_formats.iter().any(|f| f.to_uppercase() == fmt) {
                 continue;
             }

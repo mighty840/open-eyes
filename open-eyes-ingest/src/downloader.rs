@@ -1,8 +1,8 @@
 use open_eyes_core::error::OpenEyesError;
-use open_eyes_core::DuckDbPool;
+use open_eyes_core::DbPool;
 
-/// Download pending resources and load them into DuckDB as tables.
-pub async fn load_pending(db: &DuckDbPool, max_size_mb: u64) -> Result<u64, OpenEyesError> {
+/// Download pending resources and load them into SQLite as tables.
+pub async fn load_pending(db: &DbPool, max_size_mb: u64) -> Result<u64, OpenEyesError> {
     let pending = db.query_json(
         "SELECT id, dataset_id, format, url FROM oe_resources WHERE download_status = 'pending'",
     )?;
@@ -29,7 +29,7 @@ pub async fn load_pending(db: &DuckDbPool, max_size_mb: u64) -> Result<u64, Open
             Ok(row_count) => {
                 tracing::info!("Loaded {table_name}: {row_count} rows");
                 loaded += 1;
-                update_resource_status(db, id, &table_name, row_count, None);
+                update_resource_status(db, id, &table_name, row_count);
             }
             Err(e) => {
                 tracing::warn!("Failed to load resource {id}: {e}");
@@ -50,7 +50,7 @@ fn make_table_name(dataset_id: &str, resource_id: &str) -> String {
 
 async fn download_and_load(
     client: &reqwest::Client,
-    db: &DuckDbPool,
+    db: &DbPool,
     _resource_id: &str,
     url: &str,
     format: &str,
@@ -70,7 +70,7 @@ async fn download_and_load(
         }
     }
 
-    // Download to temp file
+    // Download
     let resp = client.get(url).send().await?;
     if !resp.status().is_success() {
         return Err(OpenEyesError::Ingestion(format!(
@@ -84,83 +84,175 @@ async fn download_and_load(
         return Err(OpenEyesError::Ingestion("Resource too large".into()));
     }
 
-    let ext = match format.to_uppercase().as_str() {
-        "CSV" => "csv",
-        "JSON" => "json",
-        _ => {
-            return Err(OpenEyesError::Ingestion(format!(
-                "Unsupported format: {format}"
-            )))
+    let normalized_fmt = format.rsplit('/').next().unwrap_or(format).to_uppercase();
+    match normalized_fmt.as_str() {
+        "CSV" => load_csv_to_sqlite(db, &bytes, table_name),
+        "JSON" => load_json_to_sqlite(db, &bytes, table_name),
+        _ => Err(OpenEyesError::Ingestion(format!(
+            "Unsupported format: {format}"
+        ))),
+    }
+}
+
+fn load_csv_to_sqlite(db: &DbPool, bytes: &[u8], table_name: &str) -> Result<i64, OpenEyesError> {
+    let mut reader = csv::ReaderBuilder::new()
+        .flexible(true)
+        .has_headers(true)
+        .from_reader(bytes);
+
+    let headers: Vec<String> = reader
+        .headers()
+        .map_err(|e| OpenEyesError::Ingestion(format!("CSV header error: {e}")))?
+        .iter()
+        .map(|h| sanitize_column_name(h))
+        .collect();
+
+    if headers.is_empty() {
+        return Err(OpenEyesError::Ingestion("CSV has no headers".into()));
+    }
+
+    // Drop existing table and create new one with all TEXT columns
+    let col_defs = headers
+        .iter()
+        .map(|h| format!("\"{h}\" TEXT"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    db.execute_batch(&format!(
+        "DROP TABLE IF EXISTS {table_name}; CREATE TABLE {table_name} ({col_defs});"
+    ))?;
+
+    // Build parameterized INSERT
+    let placeholders = headers.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let insert_sql = format!("INSERT INTO {table_name} VALUES ({placeholders})");
+
+    // Batch insert rows
+    let mut row_count = 0i64;
+    db.execute("BEGIN")?;
+
+    for result in reader.records() {
+        let record = match result {
+            Ok(r) => r,
+            Err(_) => continue, // skip bad rows
+        };
+        let values: Vec<String> = (0..headers.len())
+            .map(|i| record.get(i).unwrap_or("").to_string())
+            .collect();
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+        if db.execute_with_params(&insert_sql, &params).is_ok() {
+            row_count += 1;
         }
-    };
+    }
 
-    let tmp_dir = tempfile::tempdir().map_err(|e| OpenEyesError::Other(format!("tmpdir: {e}")))?;
-    let tmp_path = tmp_dir.path().join(format!("resource.{ext}"));
-    std::fs::write(&tmp_path, &bytes)
-        .map_err(|e| OpenEyesError::Other(format!("write tmp: {e}")))?;
-
-    load_file_to_duckdb(db, &tmp_path, table_name, ext)?;
-
-    // Get row count
-    let count_result = db.query_json(&format!("SELECT COUNT(*) AS cnt FROM {table_name}"))?;
-    let row_count = count_result
-        .first()
-        .and_then(|r| r["cnt"].as_i64())
-        .unwrap_or(0);
-
+    db.execute("COMMIT")?;
     Ok(row_count)
 }
 
-fn load_file_to_duckdb(
-    db: &DuckDbPool,
-    path: &std::path::Path,
+fn load_json_to_sqlite(
+    db: &DbPool,
+    bytes: &[u8],
     table_name: &str,
-    ext: &str,
-) -> Result<(), OpenEyesError> {
-    let path_str = path.to_string_lossy().replace('\'', "''");
-    let sql = match ext {
-        "csv" => format!(
-            "CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_csv_auto('{path_str}', ignore_errors=true)"
-        ),
-        "json" => format!(
-            "CREATE OR REPLACE TABLE {table_name} AS SELECT * FROM read_json_auto('{path_str}', ignore_errors=true)"
-        ),
-        _ => return Err(OpenEyesError::Ingestion(format!("Unsupported: {ext}"))),
+) -> Result<i64, OpenEyesError> {
+    let text = String::from_utf8_lossy(bytes);
+    let parsed: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| OpenEyesError::Ingestion(format!("JSON parse error: {e}")))?;
+
+    // Handle both array of objects and single object
+    let rows: Vec<&serde_json::Map<String, serde_json::Value>> = match &parsed {
+        serde_json::Value::Array(arr) => arr.iter().filter_map(|v| v.as_object()).collect(),
+        serde_json::Value::Object(obj) => vec![obj],
+        _ => {
+            return Err(OpenEyesError::Ingestion(
+                "JSON must be an array or object".into(),
+            ))
+        }
     };
 
-    db.execute(&sql)?;
-    Ok(())
+    if rows.is_empty() {
+        return Err(OpenEyesError::Ingestion("JSON has no rows".into()));
+    }
+
+    // Collect all unique keys across all rows
+    let mut headers: Vec<String> = Vec::new();
+    for row in &rows {
+        for key in row.keys() {
+            let col = sanitize_column_name(key);
+            if !headers.contains(&col) {
+                headers.push(col);
+            }
+        }
+    }
+
+    let col_defs = headers
+        .iter()
+        .map(|h| format!("\"{h}\" TEXT"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    db.execute_batch(&format!(
+        "DROP TABLE IF EXISTS {table_name}; CREATE TABLE {table_name} ({col_defs});"
+    ))?;
+
+    let placeholders = headers.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let insert_sql = format!("INSERT INTO {table_name} VALUES ({placeholders})");
+
+    db.execute("BEGIN")?;
+    let mut row_count = 0i64;
+
+    for row in &rows {
+        let values: Vec<String> = headers
+            .iter()
+            .map(|h| {
+                // Find the original key that sanitizes to this header
+                row.iter()
+                    .find(|(k, _)| sanitize_column_name(k) == *h)
+                    .map(|(_, v)| match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        serde_json::Value::Null => String::new(),
+                        other => other.to_string(),
+                    })
+                    .unwrap_or_default()
+            })
+            .collect();
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+        if db.execute_with_params(&insert_sql, &params).is_ok() {
+            row_count += 1;
+        }
+    }
+
+    db.execute("COMMIT")?;
+    Ok(row_count)
 }
 
-fn update_resource_status(
-    db: &DuckDbPool,
-    id: &str,
-    table_name: &str,
-    row_count: i64,
-    _err: Option<&str>,
-) {
-    // Get column names
+fn sanitize_column_name(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .collect();
+    if sanitized.is_empty() {
+        "col".to_string()
+    } else if sanitized.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        format!("_{sanitized}")
+    } else {
+        sanitized
+    }
+}
+
+fn update_resource_status(db: &DbPool, id: &str, table_name: &str, row_count: i64) {
+    // Get column names via PRAGMA
     let cols = db
-        .query_json(&format!(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = '{table_name}'"
-        ))
+        .query_json(&format!("PRAGMA table_info({table_name})"))
         .unwrap_or_default();
     let col_names: Vec<String> = cols
         .iter()
-        .filter_map(|c| c["column_name"].as_str().map(|s| s.to_string()))
+        .filter_map(|c| c["name"].as_str().map(|s| s.to_string()))
         .collect();
-    let cols_sql = format!(
-        "[{}]",
-        col_names
-            .iter()
-            .map(|c| format!("'{}'", c.replace('\'', "''")))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    let cols_json = serde_json::to_string(&col_names).unwrap_or_else(|_| "[]".to_string());
 
     let sql = format!(
-        "UPDATE oe_resources SET download_status = 'loaded', table_name = '{table_name}', row_count = {row_count}, column_names = {cols_sql} WHERE id = '{id}'",
+        "UPDATE oe_resources SET download_status = 'loaded', table_name = '{table_name}', row_count = {row_count}, column_names = '{cols_json}' WHERE id = '{id}'",
         table_name = table_name.replace('\'', "''"),
+        cols_json = cols_json.replace('\'', "''"),
         id = id.replace('\'', "''"),
     );
     if let Err(e) = db.execute(&sql) {
@@ -168,7 +260,7 @@ fn update_resource_status(
     }
 }
 
-fn update_resource_status_error(db: &DuckDbPool, id: &str, error: &str) {
+fn update_resource_status_error(db: &DbPool, id: &str, error: &str) {
     let sql = format!(
         "UPDATE oe_resources SET download_status = 'error', error_message = '{err}' WHERE id = '{id}'",
         err = error.replace('\'', "''"),

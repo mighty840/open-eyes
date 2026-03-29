@@ -2,8 +2,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum OpenEyesError {
-    #[error("DuckDB error: {0}")]
-    DuckDb(#[from] duckdb::Error),
+    #[error("Database error: {0}")]
+    Db(#[from] rusqlite::Error),
 
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),

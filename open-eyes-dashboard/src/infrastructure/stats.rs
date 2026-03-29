@@ -33,8 +33,8 @@ pub struct IngestionStatus {
 
 #[server]
 pub async fn fetch_overview_stats() -> Result<OverviewStats, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    use super::db_state::DbState;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
 
     let datasets =
         db.0.query_json("SELECT COUNT(*) AS cnt FROM oe_datasets")
@@ -68,11 +68,11 @@ pub async fn fetch_overview_stats() -> Result<OverviewStats, ServerFnError> {
 
 #[server]
 pub async fn fetch_popular_categories() -> Result<Vec<CategoryCount>, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    use super::db_state::DbState;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
 
     let rows = db.0.query_json(
-        "SELECT unnest(categories) AS name, COUNT(*) AS count FROM oe_datasets GROUP BY name ORDER BY count DESC LIMIT 10"
+        "SELECT j.value AS name, COUNT(*) AS count FROM oe_datasets d, json_each(d.categories) j GROUP BY j.value ORDER BY count DESC LIMIT 10"
     ).map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let cats = rows
@@ -88,11 +88,11 @@ pub async fn fetch_popular_categories() -> Result<Vec<CategoryCount>, ServerFnEr
 
 #[server]
 pub async fn fetch_recent_datasets() -> Result<Vec<RecentDataset>, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    use super::db_state::DbState;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
 
     let rows = db.0.query_json(
-        "SELECT id, title, COALESCE(organization, '') AS organization, CAST(ingested_at AS VARCHAR) AS ingested_at FROM oe_datasets ORDER BY ingested_at DESC LIMIT 10"
+        "SELECT id, title, COALESCE(organization, '') AS organization, COALESCE(ingested_at, '') AS ingested_at FROM oe_datasets ORDER BY ingested_at DESC LIMIT 10"
     ).map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let datasets = rows
@@ -110,8 +110,8 @@ pub async fn fetch_recent_datasets() -> Result<Vec<RecentDataset>, ServerFnError
 
 #[server]
 pub async fn fetch_ingestion_status() -> Result<IngestionStatus, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    use super::db_state::DbState;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
 
     let datasets =
         db.0.query_json("SELECT COUNT(*) AS cnt FROM oe_datasets")

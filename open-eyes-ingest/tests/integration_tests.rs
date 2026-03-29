@@ -1,19 +1,19 @@
-use open_eyes_core::DuckDbPool;
+use open_eyes_core::DbPool;
 
 /// Test that schema initialization creates all required tables
 /// and that the ingest workflow tables are properly linked.
 #[test]
 fn test_schema_supports_ingestion_workflow() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("ingest_test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("ingest_test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
 
     // Simulate crawl: insert dataset
     pool.execute(
-        "INSERT INTO oe_datasets (id, title, organization, categories, tags, source_portal) \
-         VALUES ('ds-001', 'Berlin Population Data', 'Statistisches Bundesamt', \
-         ['society', 'population'], ['berlin', 'demographics'], 'govdata.de')",
+        r#"INSERT INTO oe_datasets (id, title, organization, categories, tags, source_portal)
+         VALUES ('ds-001', 'Berlin Population Data', 'Statistisches Bundesamt',
+         '["society", "population"]', '["berlin", "demographics"]', 'govdata.de')"#,
     )
     .unwrap();
 
@@ -35,15 +35,15 @@ fn test_schema_supports_ingestion_workflow() {
 
     // Simulate load: create data table and update resource status
     pool.execute(
-        "CREATE TABLE data_ds00001_r000001 (year INTEGER, population BIGINT, city VARCHAR)",
+        "CREATE TABLE data_ds00001_r000001 (year INTEGER, population INTEGER, city TEXT)",
     )
     .unwrap();
     pool.execute(
         "INSERT INTO data_ds00001_r000001 VALUES (2020, 3700000, 'Berlin'), (2021, 3750000, 'Berlin'), (2022, 3800000, 'Berlin')"
     ).unwrap();
     pool.execute(
-        "UPDATE oe_resources SET download_status = 'loaded', table_name = 'data_ds00001_r000001', \
-         row_count = 3, column_names = ['year', 'population', 'city'] WHERE id = 'r-001'",
+        r#"UPDATE oe_resources SET download_status = 'loaded', table_name = 'data_ds00001_r000001',
+         row_count = 3, column_names = '["year", "population", "city"]' WHERE id = 'r-001'"#,
     )
     .unwrap();
     pool.execute(
@@ -88,29 +88,29 @@ fn test_schema_supports_ingestion_workflow() {
     assert_eq!(errors[0]["cnt"].as_i64().unwrap(), 1);
 }
 
-/// Test that categories and tags arrays work correctly with DuckDB.
+/// Test that categories and tags stored as JSON arrays work correctly.
 #[test]
-fn test_array_columns_work() {
+fn test_json_array_columns_work() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("arrays_test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("arrays_test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
 
     pool.execute(
-        "INSERT INTO oe_datasets (id, title, categories, tags, source_portal) \
-         VALUES ('ds-arr', 'Array Test', ['cat1', 'cat2', 'cat3'], ['tag1', 'tag2'], 'govdata.de')",
+        r#"INSERT INTO oe_datasets (id, title, categories, tags, source_portal)
+         VALUES ('ds-arr', 'Array Test', '["cat1", "cat2", "cat3"]', '["tag1", "tag2"]', 'govdata.de')"#,
     )
     .unwrap();
 
-    // Test unnest for categories
+    // Test json_each for categories
     let cats = pool
-        .query_json("SELECT unnest(categories) AS cat FROM oe_datasets WHERE id = 'ds-arr'")
+        .query_json("SELECT j.value AS cat FROM oe_datasets d, json_each(d.categories) j WHERE d.id = 'ds-arr'")
         .unwrap();
     assert_eq!(cats.len(), 3);
 
-    // Test array length
+    // Test json_array_length for tags
     let lens = pool
-        .query_json("SELECT len(tags) AS tag_count FROM oe_datasets WHERE id = 'ds-arr'")
+        .query_json("SELECT json_array_length(tags) AS tag_count FROM oe_datasets WHERE id = 'ds-arr'")
         .unwrap();
     assert_eq!(lens[0]["tag_count"].as_i64().unwrap(), 2);
 }
@@ -119,8 +119,8 @@ fn test_array_columns_work() {
 #[test]
 fn test_chat_message_ordering() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("chat_test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("chat_test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
 
     pool.execute(

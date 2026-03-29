@@ -1,19 +1,19 @@
-use open_eyes_core::DuckDbPool;
+use open_eyes_core::DbPool;
 
 #[test]
 fn test_open_and_init_schema() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
 
     // Verify tables exist
     let tables = pool
-        .query_json("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' ORDER BY table_name")
+        .query_json("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         .unwrap();
     let table_names: Vec<&str> = tables
         .iter()
-        .filter_map(|r| r["table_name"].as_str())
+        .filter_map(|r| r["name"].as_str())
         .collect();
 
     assert!(table_names.contains(&"oe_chat_messages"));
@@ -24,8 +24,8 @@ fn test_open_and_init_schema() {
 #[test]
 fn test_init_schema_idempotent() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
     pool.init_schema().unwrap(); // Should not fail
 }
@@ -33,11 +33,10 @@ fn test_init_schema_idempotent() {
 #[test]
 fn test_execute_and_query() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
 
-    // Insert a dataset
     pool.execute(
         "INSERT INTO oe_datasets (id, title, source_portal) VALUES ('test-1', 'Test Dataset', 'govdata.de')"
     ).unwrap();
@@ -53,24 +52,24 @@ fn test_execute_and_query() {
 #[test]
 fn test_query_json_returns_correct_types() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
 
     let rows = pool
-        .query_json("SELECT 42 AS num, 'hello' AS text, 3.14 AS decimal, NULL AS nothing")
+        .query_json("SELECT 42 AS num, 'hello' AS text, 3.14 AS decimal_val, NULL AS empty_val")
         .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["num"].as_i64().unwrap(), 42);
     assert_eq!(rows[0]["text"].as_str().unwrap(), "hello");
-    assert!((rows[0]["decimal"].as_f64().unwrap() - 3.14).abs() < 0.001);
-    assert!(rows[0]["nothing"].is_null());
+    assert!((rows[0]["decimal_val"].as_f64().unwrap() - 3.14).abs() < 0.001);
+    assert!(rows[0]["empty_val"].is_null());
 }
 
 #[test]
 fn test_execute_batch() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
 
     pool.execute_batch(
@@ -88,8 +87,8 @@ fn test_execute_batch() {
 #[test]
 fn test_get_table_infos_empty() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
 
     let infos = pool.get_table_infos().unwrap();
@@ -99,20 +98,19 @@ fn test_get_table_infos_empty() {
 #[test]
 fn test_get_table_infos_with_loaded_resource() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
 
-    // Insert dataset + resource
     pool.execute(
         "INSERT INTO oe_datasets (id, title, source_portal) VALUES ('ds1', 'Test DS', 'govdata.de')"
     ).unwrap();
     pool.execute(
-        "INSERT INTO oe_resources (id, dataset_id, url, table_name, row_count, column_names, download_status) VALUES ('r1', 'ds1', 'http://example.com', 'data_ds1_r1', 100, ['col_a', 'col_b'], 'loaded')"
+        r#"INSERT INTO oe_resources (id, dataset_id, url, table_name, row_count, column_names, download_status) VALUES ('r1', 'ds1', 'http://example.com', 'data_ds1_r1', 100, '["col_a", "col_b"]', 'loaded')"#
     ).unwrap();
 
     // Create the actual data table
-    pool.execute("CREATE TABLE data_ds1_r1 (col_a VARCHAR, col_b INTEGER)")
+    pool.execute("CREATE TABLE data_ds1_r1 (col_a TEXT, col_b INTEGER)")
         .unwrap();
 
     let infos = pool.get_table_infos().unwrap();
@@ -125,10 +123,10 @@ fn test_get_table_infos_with_loaded_resource() {
 #[test]
 fn test_get_column_schemas() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
 
-    pool.execute("CREATE TABLE test_table (name VARCHAR, age INTEGER, score DOUBLE)")
+    pool.execute("CREATE TABLE test_table (name TEXT, age INTEGER, score REAL)")
         .unwrap();
 
     let schemas = pool
@@ -145,8 +143,8 @@ fn test_get_column_schemas() {
 #[test]
 fn test_get_column_schemas_nonexistent_table() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
 
     let schemas = pool
         .get_column_schemas(&["nonexistent_table".to_string()])
@@ -157,8 +155,8 @@ fn test_get_column_schemas_nonexistent_table() {
 #[test]
 fn test_chat_messages_insert_and_query() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("test.duckdb");
-    let pool = DuckDbPool::open(&path).unwrap();
+    let path = dir.path().join("test.sqlite");
+    let pool = DbPool::open(&path).unwrap();
     pool.init_schema().unwrap();
 
     pool.execute(

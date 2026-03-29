@@ -86,12 +86,12 @@ The user's UI language is {language}, but always use the exact table names as li
             .join("\n\n");
 
         let system = format!(
-            r#"You are a DuckDB SQL expert. Generate a read-only SELECT query to answer the user's question.
+            r#"You are a SQLite SQL expert. Generate a read-only SELECT query to answer the user's question.
 Rules:
 - Only SELECT statements (no INSERT, UPDATE, DELETE, DROP, CREATE)
 - Always add LIMIT 1000
-- Use ILIKE for text matching (German text is common)
-- Use DuckDB-compatible syntax
+- Use LIKE for text matching (SQLite LIKE is case-insensitive for ASCII)
+- Use SQLite-compatible syntax
 - The user's UI language is {language}
 Respond ONLY with valid JSON: {{"sql": "SELECT ..."}}"#
         );

@@ -25,10 +25,10 @@ pub async fn ask_question(
     session_id: String,
     language: String,
 ) -> Result<ChatResult, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
+    use super::db_state::DbState;
     use super::llm_state::LlmState;
 
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
     let llm: LlmState = dioxus_fullstack::FullstackContext::extract().await?;
 
     // Save user message
@@ -140,8 +140,8 @@ pub async fn ask_question(
 pub async fn fetch_chat_history(
     session_id: String,
 ) -> Result<Vec<ChatHistoryMessage>, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    use super::db_state::DbState;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
     let sid = session_id.replace('\'', "''");
 
     let rows = db.0.query_json(&format!(

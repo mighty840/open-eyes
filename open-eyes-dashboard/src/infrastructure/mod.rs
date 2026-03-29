@@ -9,7 +9,7 @@ pub mod stats;
 #[cfg(feature = "server")]
 pub mod config;
 #[cfg(feature = "server")]
-pub mod duckdb_state;
+pub mod db_state;
 #[cfg(feature = "server")]
 pub mod error;
 #[cfg(feature = "server")]

@@ -18,3 +18,5 @@ chrono = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 dotenvy = "0.15"
 tempfile = "3"
+csv = "1"
+rusqlite = { version = "0.35", features = ["bundled"] }

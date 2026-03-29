@@ -49,21 +49,21 @@ pub async fn search_datasets(
     offset: u64,
     limit: u64,
 ) -> Result<DatasetSearchResult, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    use super::db_state::DbState;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
 
     let (count_sql, data_sql);
     if query.is_empty() {
         count_sql = "SELECT COUNT(*) AS cnt FROM oe_datasets".to_string();
         data_sql = format!(
-            "SELECT d.id, d.title, COALESCE(d.description, '') AS description, COALESCE(d.organization, '') AS organization, COALESCE(d.license, '') AS license, CAST(d.tags AS VARCHAR) AS tags_str, (SELECT COUNT(*) FROM oe_resources r WHERE r.dataset_id = d.id) AS resource_count FROM oe_datasets d ORDER BY d.ingested_at DESC LIMIT {limit} OFFSET {offset}"
+            "SELECT d.id, d.title, COALESCE(d.description, '') AS description, COALESCE(d.organization, '') AS organization, COALESCE(d.license, '') AS license, COALESCE(d.tags, '[]') AS tags_str, (SELECT COUNT(*) FROM oe_resources r WHERE r.dataset_id = d.id) AS resource_count FROM oe_datasets d ORDER BY d.ingested_at DESC LIMIT {limit} OFFSET {offset}"
         );
     } else {
         let q = query.replace('\'', "''");
-        let where_clause = format!("WHERE d.title ILIKE '%{q}%' OR d.description ILIKE '%{q}%' OR d.organization ILIKE '%{q}%'");
+        let where_clause = format!("WHERE d.title LIKE '%{q}%' OR d.description LIKE '%{q}%' OR d.organization LIKE '%{q}%'");
         count_sql = format!("SELECT COUNT(*) AS cnt FROM oe_datasets d {where_clause}");
         data_sql = format!(
-            "SELECT d.id, d.title, COALESCE(d.description, '') AS description, COALESCE(d.organization, '') AS organization, COALESCE(d.license, '') AS license, CAST(d.tags AS VARCHAR) AS tags_str, (SELECT COUNT(*) FROM oe_resources r WHERE r.dataset_id = d.id) AS resource_count FROM oe_datasets d {where_clause} ORDER BY d.ingested_at DESC LIMIT {limit} OFFSET {offset}"
+            "SELECT d.id, d.title, COALESCE(d.description, '') AS description, COALESCE(d.organization, '') AS organization, COALESCE(d.license, '') AS license, COALESCE(d.tags, '[]') AS tags_str, (SELECT COUNT(*) FROM oe_resources r WHERE r.dataset_id = d.id) AS resource_count FROM oe_datasets d {where_clause} ORDER BY d.ingested_at DESC LIMIT {limit} OFFSET {offset}"
         );
     }
 
@@ -100,12 +100,12 @@ pub async fn search_datasets(
 
 #[server]
 pub async fn fetch_dataset_detail(dataset_id: String) -> Result<DatasetDetail, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    use super::db_state::DbState;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
     let did = dataset_id.replace('\'', "''");
 
     let rows = db.0.query_json(&format!(
-        "SELECT id, title, COALESCE(description, '') AS description, COALESCE(organization, '') AS organization, COALESCE(license, '') AS license, CAST(categories AS VARCHAR) AS categories_str, CAST(tags AS VARCHAR) AS tags_str, COALESCE(ckan_url, '') AS ckan_url, COALESCE(CAST(created_at AS VARCHAR), '') AS created_at, COALESCE(CAST(modified_at AS VARCHAR), '') AS modified_at FROM oe_datasets WHERE id = '{did}'"
+        "SELECT id, title, COALESCE(description, '') AS description, COALESCE(organization, '') AS organization, COALESCE(license, '') AS license, COALESCE(categories, '[]') AS categories_str, COALESCE(tags, '[]') AS tags_str, COALESCE(ckan_url, '') AS ckan_url, COALESCE(created_at, '') AS created_at, COALESCE(modified_at, '') AS modified_at FROM oe_datasets WHERE id = '{did}'"
     )).map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let row = rows
@@ -150,8 +150,8 @@ pub async fn fetch_dataset_detail(dataset_id: String) -> Result<DatasetDetail, S
 pub async fn fetch_table_preview(
     table_name: String,
 ) -> Result<Vec<serde_json::Value>, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    use super::db_state::DbState;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
 
     if !table_name.starts_with("data_") || table_name.contains(';') || table_name.contains('\'') {
         return Err(ServerFnError::new("Invalid table name"));

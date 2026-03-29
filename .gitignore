@@ -1,4 +1,6 @@
 target/
 data/
-*.duckdb
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 .env

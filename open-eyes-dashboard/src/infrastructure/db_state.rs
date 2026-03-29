@@ -1,10 +1,10 @@
-use open_eyes_core::DuckDbPool;
+use open_eyes_core::DbPool;
 
-/// Wrapper for DuckDB pool to use as Axum extension / Dioxus server context.
+/// Wrapper for DB pool to use as Axum extension / Dioxus server context.
 #[derive(Clone)]
-pub struct DuckDbState(pub DuckDbPool);
+pub struct DbState(pub DbPool);
 
-impl<S> axum::extract::FromRequestParts<S> for DuckDbState
+impl<S> axum::extract::FromRequestParts<S> for DbState
 where
     S: Send + Sync,
 {
@@ -16,7 +16,7 @@ where
     ) -> Result<Self, Self::Rejection> {
         parts
             .extensions
-            .get::<DuckDbState>()
+            .get::<DbState>()
             .cloned()
             .ok_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
     }

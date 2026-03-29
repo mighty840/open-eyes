@@ -13,11 +13,11 @@ pub struct SavedChart {
 
 #[server]
 pub async fn fetch_saved_charts() -> Result<Vec<SavedChart>, ServerFnError> {
-    use super::duckdb_state::DuckDbState;
-    let db: DuckDbState = dioxus_fullstack::FullstackContext::extract().await?;
+    use super::db_state::DbState;
+    let db: DbState = dioxus_fullstack::FullstackContext::extract().await?;
 
     let rows = db.0.query_json(
-        "SELECT id, session_id, content, COALESCE(sql_query, '') AS sql_query, chart_spec, CAST(created_at AS VARCHAR) AS created_at FROM oe_chat_messages WHERE chart_spec IS NOT NULL AND chart_spec != '' AND chart_spec != '{}' ORDER BY created_at DESC LIMIT 50"
+        "SELECT id, session_id, content, COALESCE(sql_query, '') AS sql_query, chart_spec, COALESCE(created_at, '') AS created_at FROM oe_chat_messages WHERE chart_spec IS NOT NULL AND chart_spec != '' AND chart_spec != '{}' ORDER BY created_at DESC LIMIT 50"
     ).map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let charts = rows

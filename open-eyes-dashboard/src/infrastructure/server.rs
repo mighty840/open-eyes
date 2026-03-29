@@ -3,10 +3,10 @@ use std::sync::Arc;
 use axum::Extension;
 use dioxus::prelude::*;
 
-use open_eyes_core::{DuckDbPool, LlmClient};
+use open_eyes_core::{DbPool, LlmClient};
 
 use super::config;
-use super::duckdb_state::DuckDbState;
+use super::db_state::DbState;
 use super::error::DashboardError;
 use super::llm_state::LlmState;
 
@@ -16,10 +16,10 @@ pub fn server_start(app: fn() -> Element) -> Result<(), DashboardError> {
         .block_on(async move {
             let config = config::load_config()?;
 
-            let db = DuckDbPool::open(std::path::Path::new(&config.duckdb.path))
-                .map_err(|e| DashboardError::DuckDb(e.to_string()))?;
+            let db = DbPool::open(std::path::Path::new(&config.db.path))
+                .map_err(|e| DashboardError::Db(e.to_string()))?;
             db.init_schema()
-                .map_err(|e| DashboardError::DuckDb(e.to_string()))?;
+                .map_err(|e| DashboardError::Db(e.to_string()))?;
 
             let llm = LlmClient::new(&config.llm);
 
@@ -33,7 +33,7 @@ pub fn server_start(app: fn() -> Element) -> Result<(), DashboardError> {
 
             let router = axum::Router::new()
                 .serve_dioxus_application(ServeConfig::new(), app)
-                .layer(Extension(DuckDbState(db)))
+                .layer(Extension(DbState(db)))
                 .layer(Extension(LlmState(Arc::new(llm))));
 
             axum::serve(listener, router.into_make_service())

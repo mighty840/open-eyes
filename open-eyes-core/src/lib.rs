@@ -1,10 +1,10 @@
 pub mod config;
-pub mod duckdb;
+pub mod db;
 pub mod error;
 pub mod llm;
 pub mod models;
 
 pub use config::AppConfig;
-pub use duckdb::{build_echart_option, DuckDbPool};
+pub use db::{build_echart_option, DbPool};
 pub use error::OpenEyesError;
 pub use llm::LlmClient;

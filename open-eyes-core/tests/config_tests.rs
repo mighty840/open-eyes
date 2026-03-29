@@ -15,8 +15,8 @@ port = 9090
 title = "Test"
 default_language = "en"
 
-[duckdb]
-path = "./test.duckdb"
+[db]
+path = "./test.sqlite"
 max_resource_size_mb = 50
 
 [llm]
@@ -39,8 +39,8 @@ crawl_interval_hours = 12
     assert_eq!(config.dashboard.port, 9090);
     assert_eq!(config.dashboard.title, "Test");
     assert_eq!(config.dashboard.default_language, "en");
-    assert_eq!(config.duckdb.path, "./test.duckdb");
-    assert_eq!(config.duckdb.max_resource_size_mb, 50);
+    assert_eq!(config.db.path, "./test.sqlite");
+    assert_eq!(config.db.max_resource_size_mb, 50);
     assert_eq!(config.llm.model, "test-model");
     assert_eq!(config.llm.temperature, 0.5);
     assert_eq!(config.ckan.max_datasets, 100);
@@ -57,7 +57,7 @@ fn test_load_minimal_config() {
         f,
         r#"
 [dashboard]
-[duckdb]
+[db]
 [llm]
 [ckan]
 "#

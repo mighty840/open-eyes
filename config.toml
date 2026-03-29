@@ -1,10 +1,10 @@
 [dashboard]
-port = 8080
+port = 9000
 title = "Open Eyes"
 default_language = "de"
 
-[duckdb]
-path = "./data/open-eyes.duckdb"
+[db]
+path = "./data/open-eyes.sqlite"
 max_resource_size_mb = 100
 
 [llm]

@@ -6,7 +6,7 @@ use crate::error::OpenEyesError;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub dashboard: DashboardConfig,
-    pub duckdb: DuckDbConfig,
+    pub db: DbConfig,
     pub llm: LlmConfig,
     pub ckan: CkanConfig,
 }
@@ -22,8 +22,8 @@ pub struct DashboardConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DuckDbConfig {
-    #[serde(default = "default_duckdb_path")]
+pub struct DbConfig {
+    #[serde(default = "default_db_path")]
     pub path: String,
     #[serde(default = "default_max_resource_size")]
     pub max_resource_size_mb: u64,
@@ -64,8 +64,8 @@ fn default_title() -> String {
 fn default_language() -> String {
     "de".into()
 }
-fn default_duckdb_path() -> String {
-    "./data/open-eyes.duckdb".into()
+fn default_db_path() -> String {
+    "./data/open-eyes.sqlite".into()
 }
 fn default_max_resource_size() -> u64 {
     100
@@ -112,8 +112,8 @@ impl AppConfig {
         if let Ok(val) = std::env::var("OPEN_EYES_LLM_MODEL") {
             config.llm.model = val;
         }
-        if let Ok(val) = std::env::var("OPEN_EYES_DUCKDB_PATH") {
-            config.duckdb.path = val;
+        if let Ok(val) = std::env::var("OPEN_EYES_DB_PATH") {
+            config.db.path = val;
         }
         if let Ok(val) = std::env::var("OPEN_EYES_PORT") {
             if let Ok(port) = val.parse() {
